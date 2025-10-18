@@ -1,0 +1,215 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
+
+# ===============================================
+# 0. PREPARACIÓN INICIAL
+# ===============================================
+
+# Cargar el dataset
+try:
+    data = pd.read_csv('dataset_regresion_ciudades.csv')
+except FileNotFoundError:
+    print("Error: Asegúrate de que 'dataset_regresion_ciudades.csv' esté en el directorio.")
+    exit()
+
+# Definir la Variable Objetivo (Y) y las Variables Predictoras Iniciales (X)
+Y = data['tasa_asesinatos_por_100mil'] # Variable Objetivo [cite: 9]
+X_cols_iniciales = [
+    'indice_gini',
+    'tasa_desempleo_juvenil',
+    'porcentaje_sin_diploma_secundaria',
+    'ingresos_medios',
+    'densidad_poblacional',
+    'gasto_policial_per_capita',
+    'inversion_programas_sociales_per_capita'
+] # Variables Predictoras Iniciales [cite: 12, 14, 15, 16, 17, 18, 20]
+
+X = data[X_cols_iniciales]
+
+# Dividir los datos en conjuntos de Entrenamiento (80%) y Prueba (20%)
+# El 'random_state' asegura que la división sea la misma cada vez.
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+print(f"Datos de Entrenamiento: {X_train.shape[0]} registros")
+print(f"Datos de Prueba: {X_test.shape[0]} registros")
+print("\n--- EMPEZANDO CON LOS MODELOS ---")
+from sklearn.linear_model import LinearRegression
+
+# ===============================================
+# 1. REGRESIÓN LINEAL MÚLTIPLE (RLM)
+# ===============================================
+
+print("\n--- 1. REGRESIÓN LINEAL MÚLTIPLE ---")
+
+# --- Ejecución 1 (Baseline: Todas las variables iniciales) ---
+rlm_model_1 = LinearRegression()
+rlm_model_1.fit(X_train, Y_train)
+Y_pred_rlm_1 = rlm_model_1.predict(X_test)
+R2_rlm_1 = r2_score(Y_test, Y_pred_rlm_1)
+
+print(f"\nEjecución 1 (Todas las Variables) - R² de Prueba: {R2_rlm_1:.4f}")
+
+# Análisis de Coeficientes (Interpretación) [cite: 28]
+coefs_rlm = pd.Series(rlm_model_1.coef_, index=X_cols_iniciales).sort_values(key=abs, ascending=False)
+print("\nAnálisis de Coeficientes (Influencia):")
+print(coefs_rlm)
+
+# --- Ejecución 2 (Selección de Variables) ---
+# Se seleccionan 4 variables que, basándose en el coeficiente de la RLM 1,
+# se consideran significativas o con potencial impacto.
+X_cols_seleccionadas = [
+    'indice_gini',
+    'tasa_desempleo_juvenil',
+    'ingresos_medios',
+    'inversion_programas_sociales_per_capita'
+] # Se seleccionan 3 a 4 variables [cite: 29]
+
+X_train_sel = X_train[X_cols_seleccionadas]
+X_test_sel = X_test[X_cols_seleccionadas]
+
+rlm_model_2 = LinearRegression()
+rlm_model_2.fit(X_train_sel, Y_train)
+Y_pred_rlm_2 = rlm_model_2.predict(X_test_sel)
+R2_rlm_2 = r2_score(Y_test, Y_pred_rlm_2)
+
+print(f"\nEjecución 2 (4 Variables Seleccionadas) - R² de Prueba: {R2_rlm_2:.4f}")
+
+# Comparación [cite: 30]
+print(f"\nComparación R²: RLM 1 ({R2_rlm_1:.4f}) vs RLM 2 ({R2_rlm_2:.4f})")
+from sklearn.tree import DecisionTreeRegressor
+
+# ===============================================
+# 2. ÁRBOL DE DECISIÓN PARA REGRESIÓN
+# ===============================================
+
+print("\n--- 2. ÁRBOL DE DECISIÓN ---")
+
+# --- Ejecución 1 (Profundidad Limitada: max_depth=4) ---
+# Objetivo: Evitar sobreajuste y permitir visualización [cite: 33, 34]
+dt_model_1 = DecisionTreeRegressor(max_depth=4, random_state=42)
+dt_model_1.fit(X_train, Y_train)
+
+# Evaluación en Entrenamiento y Prueba
+R2_train_dt_1 = dt_model_1.score(X_train, Y_train)
+R2_test_dt_1 = dt_model_1.score(X_test, Y_test)
+
+print(f"\nEjecución 1 (max_depth=4):")
+print(f"  R² de Entrenamiento: {R2_train_dt_1:.4f}")
+print(f"  R² de Prueba: {R2_test_dt_1:.4f}")
+
+# --- Ejecución 2 (Profundidad Libre/Mayor) ---
+# Objetivo: Demostrar el sobreajuste [cite: 35, 37]
+dt_model_2 = DecisionTreeRegressor(max_depth=None, random_state=42) # Sin límite de profundidad
+dt_model_2.fit(X_train, Y_train)
+
+# Evaluación en Entrenamiento y Prueba (para demostrar Overfitting) [cite: 37]
+R2_train_dt_2 = dt_model_2.score(X_train, Y_train)
+R2_test_dt_2 = dt_model_2.score(X_test, Y_test)
+
+print(f"\nEjecución 2 (max_depth=Libre):")
+print(f"  R² de Entrenamiento: {R2_train_dt_2:.4f}") # Esto será muy alto (cercano a 1)
+print(f"  R² de Prueba: {R2_test_dt_2:.4f}")
+
+# Análisis del sobreajuste [cite: 72, 73]
+print("\nAnálisis: La diferencia entre R² de Entrenamiento (alto) y R² de Prueba (bajo)")
+print(f"en la Ejecución 2 (Libre) ilustra el sobreajuste.")
+from sklearn.ensemble import RandomForestRegressor
+
+# ===============================================
+# 3. RANDOM FOREST (RF)
+# ===============================================
+
+print("\n--- 3. RANDOM FOREST ---")
+
+# --- Ejecución 1 (Parámetros por Defecto: n_estimators=100) --- [cite: 45]
+rf_model_1 = RandomForestRegressor(random_state=42)
+rf_model_1.fit(X_train, Y_train)
+Y_pred_rf_1 = rf_model_1.predict(X_test)
+R2_rf_1 = r2_score(Y_test, Y_pred_rf_1)
+
+print(f"\nEjecución 1 (n_estimators=100 - Defecto) - R² de Prueba: {R2_rf_1:.4f}")
+
+# --- Ejecución 2 (Ajuste de Parámetros: n_estimators=200) --- [cite: 47]
+rf_model_2 = RandomForestRegressor(n_estimators=200, random_state=42)
+rf_model_2.fit(X_train, Y_train)
+Y_pred_rf_2 = rf_model_2.predict(X_test)
+R2_rf_2 = r2_score(Y_test, Y_pred_rf_2)
+
+print(f"\nEjecución 2 (n_estimators=200 - Ajustado) - R² de Prueba: {R2_rf_2:.4f}")
+
+# Reporte de Importancia de Características [cite: 48]
+importancia_rf = pd.Series(rf_model_2.feature_importances_, index=X_cols_iniciales).sort_values(ascending=False)
+print("\nImportancia de Características (Top 3):")
+print(importancia_rf.head(3))
+from sklearn.svm import SVR
+
+# ===============================================
+# 4. SVR (SUPPORT VECTOR REGRESSION)
+# ===============================================
+
+print("\n--- 4. SVR ---")
+
+# --- Paso Preliminar: Escalado Obligatorio --- 
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+X_train_scaled_df = pd.DataFrame(X_train_scaled, columns=X_cols_iniciales) # Convertir a DF para mantener nombres
+X_test_scaled_df = pd.DataFrame(X_test_scaled, columns=X_cols_iniciales)
+
+
+# --- Ejecución 1 (Kernel RBF - Defecto) --- [cite: 55]
+svr_model_rbf = SVR(kernel='rbf')
+svr_model_rbf.fit(X_train_scaled, Y_train)
+Y_pred_rbf = svr_model_rbf.predict(X_test_scaled)
+R2_svr_rbf = r2_score(Y_test, Y_pred_rbf)
+
+print(f"\nEjecución 1 (Kernel RBF) - R² de Prueba: {R2_svr_rbf:.4f}")
+
+# --- Ejecución 2 (Kernel Linear) --- [cite: 56]
+svr_model_linear = SVR(kernel='linear')
+svr_model_linear.fit(X_train_scaled, Y_train)
+Y_pred_linear = svr_model_linear.predict(X_test_scaled)
+R2_svr_linear = r2_score(Y_test, Y_pred_linear)
+
+print(f"\nEjecución 2 (Kernel Linear) - R² de Prueba: {R2_svr_linear:.4f}")
+
+# Comparación con RLM [cite: 56]
+print(f"\nComparación R²: RLM 1 ({R2_rlm_1:.4f}) vs SVR Linear ({R2_svr_linear:.4f})")
+import xgboost as xgb
+
+# ===============================================
+# 5. XGBOOST
+# ===============================================
+
+print("\n--- 5. XGBOOST ---")
+
+# --- Ejecución 1 (Parámetros por Defecto) --- [cite: 61]
+xgb_model_1 = xgb.XGBRegressor(objective='reg:squarederror', random_state=42)
+xgb_model_1.fit(X_train, Y_train)
+Y_pred_xgb_1 = xgb_model_1.predict(X_test)
+R2_xgb_1 = r2_score(Y_test, Y_pred_xgb_1)
+
+print(f"\nEjecución 1 (Defecto) - R² de Prueba: {R2_xgb_1:.4f}")
+
+# --- Ejecución 2 (Ajuste de Parámetros) --- [cite: 62]
+# Reducir learning_rate (más lento, potencialmente más preciso)
+# Aumentar n_estimators (más árboles)
+xgb_model_2 = xgb.XGBRegressor(
+    objective='reg:squarederror',
+    learning_rate=0.01, # Reducido [cite: 62]
+    n_estimators=500, # Aumentado [cite: 62]
+    random_state=42
+)
+xgb_model_2.fit(X_train, Y_train)
+Y_pred_xgb_2 = xgb_model_2.predict(X_test)
+R2_xgb_2 = r2_score(Y_test, Y_pred_xgb_2)
+
+print(f"\nEjecución 2 (Ajustado) - R² de Prueba: {R2_xgb_2:.4f}")
+
+# Reporte de Importancia de Características [cite: 64]
+importancia_xgb = pd.Series(xgb_model_2.feature_importances_, index=X_cols_iniciales).sort_values(ascending=False)
+print("\nImportancia de Características (Top 3):")
+print(importancia_xgb.head(3))
